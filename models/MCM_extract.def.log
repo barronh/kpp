@@ -1,0 +1,15 @@
+/Users/barronh/Development/kpp/models/RateFunctions.inc
+Traceback (most recent call last):
+  File "/Library/Frameworks/EPD64.framework/Versions/7.3/lib/python2.7/runpy.py", line 162, in _run_module_as_main
+    "__main__", fname, loader, pkg_name)
+  File "/Library/Frameworks/EPD64.framework/Versions/7.3/lib/python2.7/runpy.py", line 72, in _run_code
+    exec code in run_globals
+  File "/Users/barronh/Development/pykpp/src/pykpp/__main__.py", line 41, in <module>
+    out = Mech(arg, verbose = options.verbose, keywords = [k_.strip() for k_ in options.keywords.split(',')])
+  File "pykpp/mech.py", line 121, in __init__
+    self._parsed = _parsefile(path)
+  File "pykpp/parse.py", line 116, in _parsefile
+    return parser.parseString(deftext)
+  File "/Library/Frameworks/EPD64.framework/Versions/7.3/lib/python2.7/site-packages/pyparsing.py", line 1032, in parseString
+    raise exc
+pyparsing.ParseException: Missing one or more required elements (Group:({Suppress:(Re:('^#EQUATIONS')) Re:('.+?(?=^#)')})) (at char 0), (line:1, col:1)

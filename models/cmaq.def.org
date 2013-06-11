@@ -1,0 +1,803 @@
+#include MECHANISM.spc
+#include MECHANISM.eqn
+
+#LANGUAGE Fortran90
+#INTEGRATOR kpp_lsode
+#DRIVER ./driver
+#MEX OFF
+#HESSIAN OFF
+
+#LOOKATALL
+
+#MONITOR O3; NO; NO2;
+
+#INLINE F90_RATES
+  SUBROUTINE UPDATE_TUV() 
+     REAL(kind=dp) alta
+     !    Set up the photolysis rates
+     !    First calculate pressure altitude from altitude
+     WRITE (6,*) 'hvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhv'
+     WRITE (6,*) 'Using TUV to calculate photolysis rates as a function of O3 column, SZA, ALT, and TEMP'
+     alta=(1-(press/1013.25)**0.190263)*288.15/0.00198122*0.304800/1000.
+ 
+     if (o3col .eq. 0) then 
+       o3col=260.
+       write (6,*) 'Ozone column not specified using 260 Dobsons'
+     else
+       write (6,*) 'Ozone column =', o3col
+     endif
+       
+!    Calculate the photolysis rates for the run
+     call set_up_photol(O3col, alta, temp, bs,cs,ds,szas,svj_tj)
+     WRITE (6,*) 'Photolysis rates calculated'
+     WRITE (6,*) 'hvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhv'
+  END SUBROUTINE
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_TROE(A0, B0, A1, B1)
+    REAL A0, B0, A1, B1
+    RACM_TROE = CMAQ_10 ( A0, -B0, 0.0, A1, -B1, 0.0, 0.6, 1.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_TROE_EQUIL(A0, B0, A1, B1, A2, C2)
+    REAL A0, B0, A1, B1, A2, C2
+    RACM_TROE_EQUIL = CMAQ_1to4(A2, 0.0, C2) * CMAQ_10 ( A0, -B0, 0.0, A1, -B1, 0.0, 0.6, 1.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_THERMAL(A0, B0)
+    REAL A0, B0
+    REAL, PARAMETER :: C0 = 0.
+!   RACM2 reaction rates have the form K = A * EXP(-B / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation adds a 0 C
+    RACM_THERMAL = ARR(A0, B0, C0)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_THERMAL_T2(A0, B0)
+    REAL A0, B0
+    REAL, PARAMETER :: C0 = 0.
+!   RACM2 reaction rates have the form K = A * EXP(-B / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation adds a 0 C
+    RACM_THERMAL_T2 = DBLE(A0)*temp**2*exp(-DBLE(B0)/temp)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_STD(A0, B0, C0)
+    REAL A0, B0, C0
+
+!   GEOS Chem reaction rates have the form K = A * (300 / T)**B * EXP(C / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C and changes both their signs
+    GEOS_STD = ARR(A0, -C0, -B0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION GEOS_P(A0, B0, C0, A1, B1, C1, &
+                                FCV, FCT1, FCT2)
+    REAL A0, B0, C0, A1, B1, C1 ,CF
+    REAL FCV, FCT1, FCT2
+    REAL(kind=dp) K0M, K1
+
+    IF (FCT2 .NE. 0.000000e+00) THEN 
+      CF = EXP(-TEMP / FCT1) + EXP(-FCT2 / TEMP) 
+    ELSEIF (FCT1 .NE. 0.000000e+00) THEN 
+      CF = EXP(-TEMP / FCT1)
+    ELSE
+      CF = FCV
+    ENDIF
+    
+!   GEOS Chem reaction rates have the form K = A * (300 / T)**B * EXP(C / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C and changes both their signs
+
+    K0M = GEOS_STD(A0, B0, C0) * M
+
+    K1 = GEOS_STD(A1, B1, C1)
+    K1 = K0M / K1
+
+    GEOS_P = (K0M / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp + (LOG10(K1))**2))
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION GEOS_Z(A0, B0, C0, A1, B1, C1, A2, B2, C2)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K0, K1, K2
+
+    K0 = GEOS_STD(A0, B0, C0)
+    K1 = GEOS_STD(A1, B1, C1)*M
+    K2 = GEOS_STD(A2, B2, C2)
+
+    GEOS_Z = (K0 + K1) * (1 + H2O * K2)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_Y(A0, B0, C0)
+    REAL A0, B0, C0
+    REAL(kind=dp) K0
+    K0 = GEOS_STD(A0, B0, C0)
+    GEOS_Y = K0 * (1 + .6 * (PRESS * 100.) / 101325.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_X(A0, B0, C0, A1, B1, C1, A2, B2, C2)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K0, K2, K3            
+    K0 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    K3 = GEOS_STD(A2, B2, C2)
+    K3 = K3 * M
+    GEOS_X = K0 + K3 / (1.0_dp + K3 / K2 )
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_C(A0, B0, C0)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K1
+    K1 = GEOS_STD(A0, B0, C0)
+    GEOS_C = K1 * (O2 + 3.5D18) / (2.0_dp * O2 + 3.5D18)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_K(A0, B0, C0)
+    REAL A0, B0, C0
+    GEOS_K = 0
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_V(A0, B0, C0, A1, B1, C1)
+    REAL A0, B0, C0, A1, B1, C1
+    REAL(kind=dp) K1, K2
+    K1 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    GEOS_V = K1 / (1 + K2)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_E(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = GEOS_STD(A0, B0, C0)
+    GEOS_E = Kf / K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL*4 FUNCTION FYRNO3(CN)
+    REAL*4, PARAMETER :: Y300 = .826, ALPHA = 1.94E-22
+    REAL*4, PARAMETER :: BETA = .97, XM0 = 0., XMINF = 8.1
+    REAL*4, PARAMETER :: XF = .411
+    
+    REAL*4 CN
+    REAL*4 XCARBN, ZDNUM, TT, XXYN, YYYN, AAA, ZZYN, RARB
+    XCARBN = CN
+    ZDNUM = M
+    TT = TEMP
+    
+    XXYN = ALPHA * exp(BETA * XCARBN) * ZDNUM * ((300. / TT)**XM0)
+    YYYN = Y300 * ((300. / TT)**XMINF)
+    AAA = log10(XXYN / YYYN)
+    ZZYN = 1. / (1. + AAA / AAA)
+    RARB = (XXYN / (1. + (XXYN / YYYN))) * (XF**ZZYN)
+    FYRNO3 = RARB / (1. + RARB)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_A(A0, B0, C0, A1, B1, C1 )
+    REAL A0, B0, C0, A1, B1, C1
+    REAL TMP_A0
+    TMP_A0 = A0 * FYRNO3(A1)
+    GEOS_A = GEOS_STD(TMP_A0, B0, C0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_B(A0, B0, C0, A1, B1, C1 )
+    REAL A0, B0, C0, A1, B1, C1
+    REAL TMP_A0
+    TMP_A0 = A0 * ( 1. - FYRNO3(A1) )
+    GEOS_B = GEOS_STD(TMP_A0, B0, C0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_JO3(O3J)
+    REAL(kind=dp) O3J, T3I
+    T3I = 1.0_dp/TEMP
+    GEOS_JO3 = O3J * &
+               1.45d-10 * EXP( 89.0_dp * T3I) * H2O / &
+               ( 1.45d-10 * EXP( 89.0_dp * T3I) * H2O + &
+                 2.14d-11 * EXP(110.0_dp * T3I) * N2 + &
+                 3.20d-11 * EXP( 70.0_dp * T3I) * O2 &
+               )
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_JHNO4(HNO4J)
+    REAL(kind=dp) HNO4J
+    IF (HNO4J .GT. 0.d0) THEN
+      GEOS_JHNO4 = HNO4J + 1D-5
+    ELSE
+      GEOS_JHNO4 = HNO4J
+    ENDIF
+    
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_G(A0, B0, C0, A1, B1, C1)
+    REAL A0, B0, C0, A1, B1, C1
+    REAL(kind=dp) K1, K2
+    K1 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    GEOS_G = K1 / ( 1.0_dp + K1 * O2 )
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION CMAQ_1to4(A0, B0, C0)
+    REAL A0, B0, C0
+
+!   CMAQ reaction rates have the form K = A * (T/300.0)**B * EXP(-C/T) 
+!   KPP ARR reaction rates have the form K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C
+    CMAQ_1to4 = ARR(A0, C0, B0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION CMAQ_5(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_5 = Kf / K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION CMAQ_6(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_6 = Kf * K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION CMAQ_7(A0, B0, C0)
+    REAL A0, B0, C0
+    REAL(kind=dp) K0
+    K0 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_7 = K0 * (1 + .6 * PRESS * 100.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+   REAL(kind=dp) FUNCTION CMAQ_8(A0, C0, A2, C2, A3, C3)
+      REAL A0, C0, A2, C2, A3, C3
+      REAL(kind=dp) K0, K2, K3            
+      K0 = DBLE(A0) * EXP(-DBLE(C0) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      K3 = DBLE(A3) * EXP(-DBLE(C3) / TEMP)
+      K3 = K3 * M
+      CMAQ_8 = K0 + K3 / (1.0_dp + K3 / K2 )
+   END FUNCTION CMAQ_8
+
+  !---------------------------------------------------------------------------
+
+   REAL(kind=dp) FUNCTION CMAQ_9(A1, C1, A2, C2) 
+      REAL*8 A1, C1, A2, C2
+      REAL(kind=dp) K1, K2      
+      K1 = DBLE(A1) * EXP(-DBLE(C1) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      CMAQ_9 = K1 + K2 * M
+   END FUNCTION CMAQ_9 
+
+  !---------------------------------------------------------------------------
+
+   REAL(kind=dp) FUNCTION CMAQ_10 ( A0, B0, C0, A1, B1, C1, CF, N)
+      REAL A0, B0, C0, A1, B1, C1, CF, N
+      REAL(kind=dp) K0, K1     
+      K0 = CMAQ_1to4(A0, B0, C0)
+      K1 = CMAQ_1to4(A1, B1, C1)
+      K0 = K0 * M
+      K1 = K0 / K1
+      CMAQ_10 = (K0 / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp / DBLE(N) + (LOG10(K1))**2))
+   END FUNCTION CMAQ_10
+
+  !---------------------------------------------------------------------------
+
+   REAL(kind=dp) FUNCTION OH_CO ( A0, B0, C0, A1, B1, C1, CF, N)
+      REAL A0, B0, C0, A1, B1, C1, CF, N
+      REAL(kind=dp) K0, K1     
+      K0 = CMAQ_1to4(A0, B0, C0)
+      K1 = CMAQ_1to4(A1, B1, C1)
+      K0 = K0
+      K1 = K0 / (K1 / M)
+      OH_CO = (K0 / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp / DBLE(N) + (LOG10(K1))**2))
+   END FUNCTION OH_CO
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION TUV_J(IJ, THETA)
+    USE model_Global,  only: BS, CS, DS, SZAS, SVJ_TJ, NSZAS
+    REAL(kind=dp) B(NSZAS), C(NSZAS), D(NSZAS), TMP_SVJ_TJ(NSZAS), &
+  &               TMP_SZAS(NSZAS), THETA
+  ! IJ is the integer index of the TUV photolysis calculation
+  ! THETA is the current solar zenith angle
+    INTEGER IJ, THIS_CSZA
+
+    REAL SEVAL ! function from TUV
+    EXTERNAL SEVAL ! function from TUV
+    INTEGER THIS_SZA ! temporary variables
+    IF (THETA .LT. 90.D0) THEN
+      DO THIS_CSZA = 1, NSZAS
+        B(THIS_CSZA) = BS(THIS_CSZA, IJ)
+        C(THIS_CSZA) = CS(THIS_CSZA, IJ)
+        D(THIS_CSZA) = DS(THIS_CSZA, IJ)
+        TMP_SZAS(THIS_CSZA) = SZAS(THIS_CSZA)
+        TMP_SVJ_TJ(THIS_CSZA) = SVJ_TJ(THIS_CSZA, IJ)
+      ENDDO
+      
+      TUV_J = SEVAL(NSZAS, THETA, TMP_SZAS, TMP_SVJ_TJ, B, C, D, .false.)
+      if (.false.) then
+          write(*,*) 'MP'
+          write(*,*) 'I,THETA,J:', IJ, THETA, TUV_J
+          write(*,8879) 'B     :', B
+          write(*,8879) 'C     :', C
+          write(*,8879) 'D     :', D
+          write(*,8879) 'SZAS  :', TMP_SZAS
+          write(*,8879) 'SVJ_TJ:', TMP_SVJ_TJ
+          
+8879     FORMAT(1A6,100000(E26.17))
+          TUV_J = SEVAL(NSZAS, THETA, TMP_SZAS, TMP_SVJ_TJ, B, C, D, .true.)
+
+      endif
+    
+      IF (TUV_J .LT. 0.d0) TUV_J = 0.d0
+    ELSE
+      TUV_J = 0.d0
+    ENDIF
+
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  SUBROUTINE SHOW_RCONST()
+    INTEGER THIS_RK
+    do THIS_RK = 1, 288
+      write(*,*) THIS_RK, RCONST(THIS_RK)
+    enddo
+  END SUBROUTINE
+#ENDINLINE
+
+#INLINE F90_GLOBAL
+  REAL(dp) :: PRESS, LAT, LON, O3COL, JO1D, JNO2, H2O, H2, N2O, CH4, M, O2, N2,&
+ & RO2 = 0
+  REAL(dp), parameter :: AVOGADRO = 6.02214179e23 ! molecules mol-1
+  REAL(dp), parameter :: R = 8.314472 * 1e6 ! cm3 Pa K-1 mol-1
+  REAL(dp) :: JDAY, THETA
+  INTEGER :: INIT_TIME, NOX(NVAR), ncconcid, ncrateid, ncirrid
+  INTEGER :: ncconcids(NVAR), ncrateids(NREACT), ncirrids(NREACT), ncstdids(10)
+  REAL(dp):: CONSTRAIN(NVAR)
+  REAL(dp), dimension(10000) :: VLAT, VLON, VTEMP, VPRESS, VH2O
+  LOGICAL :: SPEC_CH4, SPEC_H2, SPEC_N2O
+  INTEGER :: IntTime, IntCount
+  LOGICAL :: CONSTRAIN_NOX
+  LOGICAL :: CONSTRAIN_RUN, LAST_POINT, OUTPUT_LAST
+  CHARACTER(LEN=15) :: spec_name(10000)
+  INTEGER :: const_method(10000)
+!Photolysis variables
+  include 'tuv_old/params'
+  INTEGER, parameter :: NSZAS = 19, NJ = kj
+  INTEGER, parameter :: IDATE = 19840701, JDATE = 1984184
+
+  REAL*8::bs(NSZAS,NJ), cs(NSZAS,NJ),ds(NSZAS,NJ)
+  REAL::svj_tj(kt,kj), szas(kt), jfactno2, jfacto1d
+!End photolysis variables
+
+#ENDINLINE {above lines go into MODULE KPP_ROOT_Global}
+
+#INLINE F90_INIT
+ TSTART = (12.*3600.) ! seconds
+ TEND = TSTART + (3.*24.*3600.) ! seconds
+ DT = 1./15.*3600. ! seconds
+ TEMP = 230. ! K
+ PRESS = 298.30 ! hPa
+ M = AVOGADRO * PRESS * 100. /TEMP/R ! molecules cm-3
+#ENDINLINE
+
+#INLINE F90_RCONST 
+ !end of USE statements 
+ !
+ ! start of executable statements
+
+ REAL ZENITH
+ REAL(kind=dp) :: Time2
+ PRESS = VPRESS(IntCount)
+ TEMP = VTEMP(IntCount)
+ LAT = VLAT(IntCount)
+ LON = VLON(IntCount)
+ M = AVOGADRO * PRESS * 100 / TEMP / R ! molecules cm-3
+ CFACTOR = M * 1.e-6
+ H2O = VH2O(IntCount) * CFACTOR
+ N2 = 0.7808*M
+ O2 = 0.2095*M
+ Time2=mod(Time/(60.*60.), 24.)
+ IF (IntCount .GT. 1) THEN
+   IF (VPRESS(IntCount-1) .NE. PRESS .OR. VTEMP(IntCount-1) .NE. TEMP) THEN
+     call update_tuv()
+   ENDIF
+ ELSE
+   call update_tuv()
+ ENDIF
+
+ THETA=DBLE( ZENITH ( REAL(LAT), REAL(LON), IDATE, REAL(Time2) ))
+#ENDINLINE 
+
+#INLINE F90_UTIL
+
+! ****************************************************************
+!                            
+! InitSaveData - Opens the data file for writing
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewInitSaveData(counter, nsteps)
+
+        USE model_Parameters
+        USE model_monitor
+        USE model_GLOBAL
+        USE netcdf
+  
+        Integer counter, length, ierr, i, dimid, status, nsteps
+        character*200 filename
+        character*200 eqnname, filename1
+        write(filename1,'(i4)') counter
+
+        filename='MECHANISM_Spec_'//TRIM(ADJUSTL(filename1))//'.nc'
+        
+        call checknc(nf90_create(filename, NF90_CLASSIC_MODEL, ncconcid))
+        call checknc(nf90_def_dim(ncconcid, 'SIM', nf90_UNLIMITED, dimid))
+        call checknc(nf90_def_dim(ncconcid, 'TSTEP', nsteps, dimid))
+        call checknc(nf90_def_dim(ncconcid, 'DATE-TIME', 2, dimid))
+        call checknc(nf90_def_dim(ncconcid, 'VAR', NVAR+10, dimid))
+        call checknc(nf90_put_att(ncconcid, nf90_GLOBAL, 'MECH', 'MECHANISM'))
+        call checknc(nf90_put_att(ncconcid, nf90_GLOBAL, 'SDATE', JDATE))
+        
+        call AddStdVar(ncconcid)
+
+        DO i = 1, NVAR
+            call AddVarWithUnitDesc(ncconcid, TRIM(SPC_NAMES(i)), 'ppm', &
+              TRIM(SPC_NAMES(i))//' in micromoles per mole of air', ncconcids(i))
+        ENDDO
+        call checknc(nf90_enddef(ncconcid))
+
+        filename='MECHANISM_Rate_'//TRIM(ADJUSTL(filename1))//'.nc'
+
+        call checknc(nf90_create(filename, NF90_CLASSIC_MODEL, ncrateid))
+        call checknc(nf90_def_dim(ncrateid, 'SIM', nf90_UNLIMITED, dimid))
+        call checknc(nf90_def_dim(ncrateid, 'TSTEP', nsteps, dimid))
+        call checknc(nf90_def_dim(ncrateid, 'DATE-TIME', 2, dimid))
+        call checknc(nf90_def_dim(ncrateid, 'VAR', NREACT+10, dimid))
+        call checknc(nf90_put_att(ncrateid, nf90_GLOBAL, 'MECH', 'MECHANISM'))
+        call checknc(nf90_put_att(ncrateid, nf90_GLOBAL, 'SDATE', JDAY))
+        
+        call AddStdVar(ncrateid)
+        
+        DO i = 1, NREACT
+            write(eqnname,'(i4)') I
+            eqnname = 'RXN_'//TRIM(ADJUSTL(eqnname))
+            call AddVarWithUnitDesc(ncrateid, TRIM(eqnname), 'molecules * cm**-3', &
+              TRIM(EQN_NAMES(i))//' in molecules per cubic centimenter', ncrateids(i))          
+        ENDDO
+        call checknc(nf90_enddef(ncrateid))
+
+        filename='MECHANISM_IRR_'//TRIM(ADJUSTL(filename1))//'.nc'
+
+        call checknc(nf90_create(filename, NF90_CLASSIC_MODEL, ncirrid))
+        call checknc(nf90_def_dim(ncirrid, 'SIM', nf90_UNLIMITED, dimid))
+        call checknc(nf90_def_dim(ncirrid, 'TSTEP', nsteps, dimid))
+        call checknc(nf90_def_dim(ncirrid, 'DATE-TIME', 2, dimid))
+        call checknc(nf90_def_dim(ncirrid, 'VAR', NREACT+10, dimid))
+        call checknc(nf90_put_att(ncirrid, nf90_GLOBAL, 'MECH', 'MECHANISM'))
+        call checknc(nf90_put_att(ncirrid, nf90_GLOBAL, 'SDATE', JDAY))
+        
+        call AddStdVar(ncirrid)
+        
+        DO i = 1, NREACT
+            write(eqnname,'(i4)') I
+            eqnname = 'IRR_'//TRIM(ADJUSTL(eqnname))
+            call AddVarWithUnitDesc(ncirrid, TRIM(eqnname), 'ppm', &
+              TRIM(EQN_NAMES(i))//' in micromoles per mole of air', ncirrids(i))            
+        ENDDO
+        call checknc(nf90_enddef(ncirrid))
+      END SUBROUTINE NewInitSaveData
+
+      SUBROUTINE checknc(status)
+        use netcdf
+        integer, intent(in) :: status
+        
+        if(status /= nf90_noerr) then
+          print *, trim(nf90_strerror(status))
+          stop 2
+        end if
+      END SUBROUTINE checknc
+
+      SUBROUTINE AddStdVar(ncid)
+        use model_Global
+        
+        integer, intent(in) :: ncid
+        integer i
+        i = 1
+        call AddVarWithUnitDesc(ncid, 'TIME', 'seconds from start', &
+          'seconds from starting time (global variable SDATE)', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'TFLAG', '<YYYYJJJ, HHMMSS>', &
+          'Julian data and time', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'LAT', 'decimal degrees east', &
+          'Latitude in degrees east', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'LON', 'decimal degrees north', &
+          'Longitude in degrees west', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'PRESS', 'hPa', &
+          'Pressure in hecta Pascals', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'TEMP', 'K', &
+          'Temperature in degrees Kelvin', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'THETA', 'decimal degrees', &
+          'Solar zenith angle in decimal degrees', ncstdids(i))
+        i = i + 1
+        call AddVarWithUnitDesc(ncid, 'CFACTOR', 'Mmolecules**1 * cm**-3', &
+          'Air in micromoles per mole of air', ncstdids(i))
+        if (ncid .eq. ncconcid .or. ncid .eq. ncirrid) then
+            i = i + 1
+            call AddVarWithUnitDesc(ncid, 'H2O', 'ppm', &
+              'Water in micromoles per mole of air', ncstdids(i))
+            i = i + 1
+            call AddVarWithUnitDesc(ncid, 'RO2', 'ppm', &
+              'Peroxy radicals in micromoles per mole of air', ncstdids(i))
+        else
+            i = i + 1
+            call AddVarWithUnitDesc(ncid, 'H2O', 'molecules * cm**-3', &
+              'Water in molecules per cubic centimeter', ncstdids(i))
+            i = i + 1
+            call AddVarWithUnitDesc(ncid, 'RO2', 'molecules * cm**-3', &
+              'Peroxy radicals in molecules per cubic centimeter', ncstdids(i))
+        endif
+      END SUBROUTINE AddStdVar
+
+      SUBROUTINE AddVarWithUnitDesc(ncid, varname, unit, desc, varid)
+        use netcdf
+        integer, intent(out) :: varid
+        integer ncid, dimid0, dimid1, status, dimid2, dimid3, templen
+        character(*) varname, unit, desc
+        character(20) tempname
+        call checknc(nf90_inq_dimid(ncid, 'SIM', dimid0))
+        call checknc(nf90_inq_dimid(ncid, 'TSTEP', dimid1))
+        if (trim(varname) .eq. 'TFLAG') then
+            call checknc(nf90_inq_dimid(ncid, 'VAR', dimid2))
+            call checknc(nf90_inquire_dimension(ncid, dimid2, tempname, templen))
+            call checknc(nf90_inq_dimid(ncid, 'DATE-TIME', dimid3))
+            call checknc(nf90_def_var(ncid, TRIM(varname), nf90_int, &
+               (/ dimid3, dimid2, dimid1, dimid0 /), varid))
+        else
+            call checknc(nf90_def_var(ncid, TRIM(varname), nf90_double, &
+               (/ dimid1, dimid0 /), varid))
+        ENDIF
+        call checknc(nf90_put_att(ncid, varid, 'units', trim(unit)))
+        call checknc(nf90_put_att(ncid, varid, 'var_desc', desc))
+        call checknc(nf90_put_att(ncid, varid, 'long_name', varname))
+      END SUBROUTINE AddVarWithUnitDesc
+
+! End of InitSaveData function
+! ****************************************************************
+! ****************************************************************
+!                            
+! SaveData - Write LOOKAT species in the data file 
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewSaveData(counter)
+        integer counter
+        call WriteConc(counter)
+        call WriteRate(counter)
+        call WriteIrr(counter)
+      END SUBROUTINE NewSaveData
+      
+      SUBROUTINE WriteConc(counter)
+        use model_Parameters
+        use model_Monitor
+        use model_Global
+
+        integer counter
+        
+        call WriteBoth(ncconcid, counter)
+        call AddThisHour(ncconcid, ncconcids, C, NVAR, counter)
+      END SUBROUTINE WriteConc
+
+      SUBROUTINE WriteRate(counter)
+        use model_Parameters
+        use model_Monitor
+        use model_Global
+        
+        character*200, dimension(NREACT) :: eqnnames
+        character*200 eqnname
+        integer i, counter
+        
+        do i = 1, NREACT
+            write(eqnname,'(i4)') I
+            eqnname = 'RXN_'//TRIM(ADJUSTL(eqnname))
+            eqnnames(i) = trim(eqnname)
+        enddo
+        call WriteBoth(ncrateid, counter)
+        call AddThisHour(ncrateid, ncrateids, RCONST, NREACT, counter)
+      END SUBROUTINE WriteRate
+
+      SUBROUTINE WriteIrr(counter)
+        use model_Parameters
+        use model_Monitor
+        use model_Global
+        
+        character*200, dimension(NREACT) :: eqnnames
+        character*200 eqnname
+        integer i, counter
+        
+        do i = 1, NREACT
+            write(eqnname,'(i4)') I
+            eqnname = 'IRR_'//TRIM(ADJUSTL(eqnname))
+            eqnnames(i) = trim(eqnname)
+        enddo
+        call WriteBoth(ncirrid, counter)
+        call AddThisHour(ncirrid, ncirrids, IRR, NREACT, counter)
+        do i = 1, NREACT
+            IRR(i) = 0.
+        enddo
+      END SUBROUTINE WriteIrr
+
+      SUBROUTINE WriteBoth(ncid, counter)
+        use model_Global
+        use netcdf
+        
+        integer, intent(in) :: ncid, counter
+        integer i, j, dimid, dim, add_days, OUT_JDATE
+        character*100 name
+        integer, dimension(2) :: start
+        integer tflag
+        
+        start = (/ intcount, counter /)
+
+        i = 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), TIME, start))
+        i = i + 1
+
+        call checknc(nf90_inq_dimid(ncid, 'VAR', dimid))
+        call checknc(nf90_inquire_dimension(ncid, dimid, name, dim))
+        add_days = int(TIME)/3600/24
+        OUT_JDATE = JDATE + add_days
+        TFLAG = mod(int(time), 24*3600)
+        TFLAG = TFLAG/3600 * 10000
+        TFLAG = TFLAG + mod(int(TIME), 3600) / 60 * 100
+        TFLAG = TFLAG + mod(int(TIME), 60)
+        call checknc(nf90_put_var(ncid, ncstdids(i), &
+          reshape((/(OUT_JDATE, j = 1, dim)/), shape = (/1, dim, 1, 1/)), &
+          start = (/1, 1, intcount, counter/), stride = (/2, 1, 1, 1/)))
+        call checknc(nf90_put_var(ncid, ncstdids(i), &
+          reshape((/(TFLAG, j = 1, dim)/), shape = (/1, dim, 1, 1/)), &
+          start = (/2, 1, intcount, counter/), stride = (/2, 1, 1, 1/)))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), LAT, start))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), LON, start))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), PRESS, start))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), TEMP, start))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), THETA, start))
+        i = i + 1
+        call checknc(nf90_put_var(ncid, ncstdids(i), CFACTOR, start))
+        if (ncid .eq. ncconcid .or. ncid .eq. ncirrid) then
+            i = i + 1
+            call checknc(nf90_put_var(ncid, ncstdids(i), H2O/CFACTOR, start))
+            i = i + 1
+            call checknc(nf90_put_var(ncid, ncstdids(i), RO2/CFACTOR, start))
+        else
+            i = i + 1
+            call checknc(nf90_put_var(ncid, ncstdids(i), H2O, start))
+            i = i + 1
+            call checknc(nf90_put_var(ncid, ncstdids(i), RO2, start))
+        endif
+      END SUBROUTINE WriteBoth
+      
+      SUBROUTINE AddThisHour(ncid, ncids, values, nvalues, counter)
+        use model_Global
+        use netcdf
+        
+        integer, intent(in) :: ncid, nvalues, counter
+        integer, intent(in) :: ncids(*)
+        real(kind=dp), dimension(:), intent(in) :: values
+        real(kind=dp) value
+        integer i
+        
+        integer, dimension(2) :: start
+        start = (/ intcount, counter/)
+
+        do i = 1, nvalues
+            value = values(i)
+            if (ncid .eq. ncconcid .or. ncid .eq. ncirrid) then
+                value = value / CFACTOR
+            endif
+            call checknc(nf90_put_var(ncid, ncids(i), value, start))
+        enddo
+      END SUBROUTINE AddThisHour
+
+! End of SaveData function
+! ****************************************************************
+
+! ****************************************************************
+!                            
+! CloseSaveData - Close the data file 
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewSyncData ()
+
+          USE model_Parameters
+          USE model_Global
+          USE netcdf
+          
+          call checknc(nf90_sync(ncconcid))
+          call checknc(nf90_sync(ncrateid))
+          call checknc(nf90_sync(ncirrid))
+
+      END SUBROUTINE NewSyncData
+
+      SUBROUTINE NewCloseData ()
+
+          USE model_Parameters
+          USE model_Global
+          USE netcdf
+          
+          call checknc(nf90_close(ncconcid))
+          call checknc(nf90_close(ncrateid))
+          call checknc(nf90_close(ncirrid))
+
+      END SUBROUTINE NewCloseData
+
+! End of CloseSaveData function
+! ****************************************************************
+         
+#ENDINLINE

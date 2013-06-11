@@ -1,0 +1,536 @@
+#include cb05cl_ae5_aq.spc
+#include cb05cl_ae5_aq.eqn
+
+#LANGUAGE Fortran90
+#INTEGRATOR kpp_lsode
+#DRIVER ./driver
+#MEX OFF
+#HESSIAN OFF
+
+#LOOKATALL
+
+#MONITOR O3; NO; NO2;
+
+#INLINE F90_RATES
+  SUBROUTINE UPDATE_TUV() 
+     REAL(kind=dp) alta
+     !    Set up the photolysis rates
+     !    First calculate pressure altitude from altitude
+     WRITE (6,*) 'hvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhv'
+     WRITE (6,*) 'Using TUV to calculate photolysis rates as a function of O3 column, SZA, ALT, and TEMP'
+     alta=(1-(press/1013.25)**0.190263)*288.15/0.00198122*0.304800/1000.
+ 
+     if (o3col .eq. 0) then 
+       o3col=260.
+       write (6,*) 'Ozone column not specified using 260 Dobsons'
+     else
+       write (6,*) 'Ozone column =', o3col
+     endif
+       
+!    Calculate the photolysis rates for the run
+     call set_up_photol(O3col, alta, temp, bs,cs,ds,szas,svj_tj)
+     WRITE (6,*) 'Photolysis rates calculated'
+     WRITE (6,*) 'hvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhvhv'
+  END SUBROUTINE
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_TROE(A0, B0, A1, B1)
+    REAL A0, B0, A1, B1
+    RACM_TROE = CMAQ_10 ( A0, -B0, 0.0, A1, -B1, 0.0, 0.6, 1.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_TROE_EQUIL(A0, B0, A1, B1, A2, C2)
+    REAL A0, B0, A1, B1, A2, C2
+    RACM_TROE_EQUIL = CMAQ_1to4(A2, 0.0, C2) * CMAQ_10 ( A0, -B0, 0.0, A1, -B1, 0.0, 0.6, 1.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_THERMAL(A0, B0)
+    REAL A0, B0
+    REAL, PARAMETER :: C0 = 0.
+!   RACM2 reaction rates have the form K = A * EXP(-B / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation adds a 0 C
+    RACM_THERMAL = ARR(A0, B0, C0)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION RACM_THERMAL_T2(A0, B0)
+    REAL A0, B0
+    REAL, PARAMETER :: C0 = 0.
+!   RACM2 reaction rates have the form K = A * EXP(-B / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation adds a 0 C
+    RACM_THERMAL_T2 = DBLE(A0)*temp**2*exp(-DBLE(B0)/temp)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_STD(A0, B0, C0)
+    REAL A0, B0, C0
+
+!   GEOS Chem reaction rates have the form K = A * (300 / T)**B * EXP(C / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C and changes both their signs
+    GEOS_STD = ARR(A0, -C0, -B0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION GEOS_P(A0, B0, C0, A1, B1, C1, &
+                                FCV, FCT1, FCT2)
+    REAL A0, B0, C0, A1, B1, C1 ,CF
+    REAL FCV, FCT1, FCT2
+    REAL(kind=dp) K0M, K1
+
+    IF (FCT2 .NE. 0.000000e+00) THEN 
+      CF = EXP(-TEMP / FCT1) + EXP(-FCT2 / TEMP) 
+    ELSEIF (FCT1 .NE. 0.000000e+00) THEN 
+      CF = EXP(-TEMP / FCT1)
+    ELSE
+      CF = FCV
+    ENDIF
+    
+!   GEOS Chem reaction rates have the form K = A * (300 / T)**B * EXP(C / T)
+!   KPP ARR reaction rates have the form   K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C and changes both their signs
+
+    K0M = GEOS_STD(A0, B0, C0) * M
+
+    K1 = GEOS_STD(A1, B1, C1)
+    K1 = K0M / K1
+
+    GEOS_P = (K0M / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp + (LOG10(K1))**2))
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION GEOS_Z(A0, B0, C0, A1, B1, C1, A2, B2, C2)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K0, K1, K2
+
+    K0 = GEOS_STD(A0, B0, C0)
+    K1 = GEOS_STD(A1, B1, C1)*M
+    K2 = GEOS_STD(A2, B2, C2)
+
+    GEOS_Z = (K0 + K1) * (1 + H2O * K2)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_Y(A0, B0, C0)
+    REAL A0, B0, C0
+    REAL(kind=dp) K0
+    K0 = GEOS_STD(A0, B0, C0)
+    GEOS_Y = K0 * (1 + .6 * (PRESS * 100.) / 101325.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_X(A0, B0, C0, A1, B1, C1, A2, B2, C2)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K0, K2, K3            
+    K0 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    K3 = GEOS_STD(A2, B2, C2)
+    K3 = K3 * M
+    GEOS_X = K0 + K3 / (1.0_dp + K3 / K2 )
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_C(A0, B0, C0)
+    REAL A0, B0, C0, A1, B1, C1, A2, B2, C2
+    REAL(kind=dp) K1
+    K1 = GEOS_STD(A0, B0, C0)
+    GEOS_C = K1 * (O2 + 3.5D18) / (2.0_dp * O2 + 3.5D18)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_K(A0, B0, C0)
+    REAL A0, B0, C0
+    GEOS_K = 0
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_V(A0, B0, C0, A1, B1, C1)
+    REAL A0, B0, C0, A1, B1, C1
+    REAL(kind=dp) K1, K2
+    K1 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    GEOS_V = K1 / (1 + K2)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_E(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = GEOS_STD(A0, B0, C0)
+    GEOS_E = Kf / K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL*4 FUNCTION FYRNO3(CN)
+    REAL*4, PARAMETER :: Y300 = .826, ALPHA = 1.94E-22
+    REAL*4, PARAMETER :: BETA = .97, XM0 = 0., XMINF = 8.1
+    REAL*4, PARAMETER :: XF = .411
+    
+    REAL*4 CN
+    REAL*4 XCARBN, ZDNUM, TT, XXYN, YYYN, AAA, ZZYN, RARB
+    XCARBN = CN
+    ZDNUM = M
+    TT = TEMP
+    
+    XXYN = ALPHA * exp(BETA * XCARBN) * ZDNUM * ((300. / TT)**XM0)
+    YYYN = Y300 * ((300. / TT)**XMINF)
+    AAA = log10(XXYN / YYYN)
+    ZZYN = 1. / (1. + AAA / AAA)
+    RARB = (XXYN / (1. + (XXYN / YYYN))) * (XF**ZZYN)
+    FYRNO3 = RARB / (1. + RARB)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_A(A0, B0, C0, A1, B1, C1 )
+    REAL A0, B0, C0, A1, B1, C1
+    REAL TMP_A0
+    TMP_A0 = A0 * FYRNO3(A1)
+    GEOS_A = GEOS_STD(TMP_A0, B0, C0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_B(A0, B0, C0, A1, B1, C1 )
+    REAL A0, B0, C0, A1, B1, C1
+    REAL TMP_A0
+    TMP_A0 = A0 * ( 1. - FYRNO3(A1) )
+    GEOS_B = GEOS_STD(TMP_A0, B0, C0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_JO3(O3J)
+    REAL(kind=dp) O3J, T3I
+    T3I = 1.0_dp/TEMP
+    GEOS_JO3 = O3J * &
+               1.45d-10 * EXP( 89.0_dp * T3I) * H2O / &
+               ( 1.45d-10 * EXP( 89.0_dp * T3I) * H2O + &
+                 2.14d-11 * EXP(110.0_dp * T3I) * N2 + &
+                 3.20d-11 * EXP( 70.0_dp * T3I) * O2 &
+               )
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_JHNO4(HNO4J)
+    REAL(kind=dp) HNO4J
+    IF (HNO4J .GT. 0.d0) THEN
+      GEOS_JHNO4 = HNO4J + 1D-5
+    ELSE
+      GEOS_JHNO4 = HNO4J
+    ENDIF
+    
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION GEOS_G(A0, B0, C0, A1, B1, C1)
+    REAL A0, B0, C0, A1, B1, C1
+    REAL(kind=dp) K1, K2
+    K1 = GEOS_STD(A0, B0, C0)
+    K2 = GEOS_STD(A1, B1, C1)
+    GEOS_G = K1 / ( 1.0_dp + K1 * O2 )
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION CMAQ_1to4(A0, B0, C0)
+    REAL A0, B0, C0
+
+!   CMAQ reaction rates have the form K = A * (T/300.0)**B * EXP(-C/T) 
+!   KPP ARR reaction rates have the form K = A * (T/300.0)**C * EXP(-B/T) 
+!   
+!   Translation reorders B and C
+    CMAQ_1to4 = ARR(A0, C0, B0)
+  END FUNCTION
+  
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION CMAQ_5(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_5 = Kf / K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION CMAQ_6(A0, B0, C0, Kf)
+    REAL A0, B0, C0
+    REAL(kind=dp) K1, Kf
+    K1 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_6 = Kf * K1
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+  REAL(kind=dp) FUNCTION CMAQ_7(A0, B0, C0)
+    REAL A0, B0, C0
+    REAL(kind=dp) K0
+    K0 = CMAQ_1to4(A0, B0, C0)
+    CMAQ_7 = K0 * (1 + .6 * PRESS * 100.)
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+  
+   REAL(kind=dp) FUNCTION CMAQ_8(A0, C0, A2, C2, A3, C3)
+      REAL A0, C0, A2, C2, A3, C3
+      REAL(kind=dp) K0, K2, K3            
+      K0 = DBLE(A0) * EXP(-DBLE(C0) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      K3 = DBLE(A3) * EXP(-DBLE(C3) / TEMP)
+      K3 = K3 * M
+      CMAQ_8 = K0 + K3 / (1.0_dp + K3 / K2 )
+   END FUNCTION CMAQ_8
+
+  !---------------------------------------------------------------------------
+
+   REAL(kind=dp) FUNCTION CMAQ_9(A1, C1, A2, C2) 
+      REAL*8 A1, C1, A2, C2
+      REAL(kind=dp) K1, K2      
+      K1 = DBLE(A1) * EXP(-DBLE(C1) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      CMAQ_9 = K1 + K2 * M
+   END FUNCTION CMAQ_9 
+
+  !---------------------------------------------------------------------------
+
+   REAL(kind=dp) FUNCTION CMAQ_10 ( A0, B0, C0, A1, B1, C1, CF, N)
+      REAL A0, B0, C0, A1, B1, C1, CF, N
+      REAL(kind=dp) K0, K1     
+      K0 = CMAQ_1to4(A0, B0, C0)
+      K1 = CMAQ_1to4(A1, B1, C1)
+      K0 = K0 * M
+      K1 = K0 / K1
+      CMAQ_10 = (K0 / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp / DBLE(N) + (LOG10(K1))**2))
+   END FUNCTION CMAQ_10
+
+  !---------------------------------------------------------------------------
+
+  REAL(kind=dp) FUNCTION TUV_J(IJ, THETA)
+    USE model_Global,  only: BS, CS, DS, SZAS, SVJ_TJ, NSZAS
+    REAL(kind=dp) B(NSZAS), C(NSZAS), D(NSZAS), TMP_SVJ_TJ(NSZAS), &
+  &               TMP_SZAS(NSZAS), THETA
+  ! IJ is the integer index of the TUV photolysis calculation
+  ! THETA is the current solar zenith angle
+    INTEGER IJ, THIS_CSZA
+
+    REAL SEVAL ! function from TUV
+    EXTERNAL SEVAL ! function from TUV
+    INTEGER THIS_SZA ! temporary variables
+    IF (THETA .LT. 90.D0) THEN
+      DO THIS_CSZA = 1, NSZAS
+        B(THIS_CSZA) = BS(THIS_CSZA, IJ)
+        C(THIS_CSZA) = CS(THIS_CSZA, IJ)
+        D(THIS_CSZA) = DS(THIS_CSZA, IJ)
+        TMP_SZAS(THIS_CSZA) = SZAS(THIS_CSZA)
+        TMP_SVJ_TJ(THIS_CSZA) = SVJ_TJ(THIS_CSZA, IJ)
+      ENDDO
+      
+      TUV_J = SEVAL(NSZAS, THETA, TMP_SZAS, TMP_SVJ_TJ, B, C, D, .false.)
+      if (.false.) then
+          write(*,*) 'MP'
+          write(*,*) 'I,THETA,J:', IJ, THETA, TUV_J
+          write(*,8879) 'B     :', B
+          write(*,8879) 'C     :', C
+          write(*,8879) 'D     :', D
+          write(*,8879) 'SZAS  :', TMP_SZAS
+          write(*,8879) 'SVJ_TJ:', TMP_SVJ_TJ
+          
+8879     FORMAT(1A6,100000(E26.17))
+          TUV_J = SEVAL(NSZAS, THETA, TMP_SZAS, TMP_SVJ_TJ, B, C, D, .true.)
+
+      endif
+    
+      IF (TUV_J .LT. 0.d0) TUV_J = 0.d0
+    ELSE
+      TUV_J = 0.d0
+    ENDIF
+
+  END FUNCTION
+
+  !---------------------------------------------------------------------------
+
+  SUBROUTINE SHOW_RCONST()
+    INTEGER THIS_RK
+    do THIS_RK = 1, 288
+      write(*,*) THIS_RK, RCONST(THIS_RK)
+    enddo
+  END SUBROUTINE
+#ENDINLINE
+
+#INLINE F90_GLOBAL
+  REAL(dp) :: PRESS, LAT, LON, O3COL, JO1D, JNO2, H2O, H2, N2O, CH4, M, O2, N2,&
+ & RO2 = 0
+  REAL(dp), parameter :: AVOGADRO = 6.02214179e23 ! molecules mol-1
+  REAL(dp), parameter :: R = 8.314472 * 1e6 ! cm3 Pa K-1 mol-1
+  REAL(dp) :: JDAY, THETA
+  INTEGER :: INIT_TIME, NOX(NVAR)
+  REAL(dp):: CONSTRAIN(NVAR)
+  REAL(dp), dimension(10000) :: VLAT, VLON, VTEMP, VPRESS, VH2O
+  LOGICAL :: SPEC_CH4, SPEC_H2, SPEC_N2O
+  INTEGER :: IntTime, IntCount
+  LOGICAL :: CONSTRAIN_NOX
+  LOGICAL :: CONSTRAIN_RUN, LAST_POINT, OUTPUT_LAST
+  CHARACTER(LEN=15) :: spec_name(10000)
+  INTEGER :: const_method(10000)
+!Photolysis variables
+  include 'tuv_old/params'
+  INTEGER, parameter :: NSZAS = 19, NJ = kj
+  
+  REAL*8::bs(NSZAS,NJ), cs(NSZAS,NJ),ds(NSZAS,NJ)
+  REAL::svj_tj(kt,kj), szas(kt), jfactno2, jfacto1d
+!End photolysis variables
+
+#ENDINLINE {above lines go into MODULE KPP_ROOT_Global}
+
+#INLINE F90_INIT
+ TSTART = (12.*3600.) ! seconds
+ TEND = TSTART + (3.*24.*3600.) ! seconds
+ DT = 1./15.*3600. ! seconds
+ TEMP = 230. ! K
+ PRESS = 298.30 ! hPa
+ M = AVOGADRO * PRESS * 100. /TEMP/R ! molecules cm-3
+#ENDINLINE
+
+#INLINE F90_RCONST 
+ !end of USE statements 
+ !
+ ! start of executable statements
+
+ INTEGER IDATE
+ REAL ZENITH
+ REAL(kind=dp) :: Time2
+ PRESS = VPRESS(IntCount)
+ TEMP = VTEMP(IntCount)
+ LAT = VLAT(IntCount)
+ LON = VLON(IntCount)
+ M = AVOGADRO * PRESS * 100 / TEMP / R ! molecules cm-3
+ CFACTOR = M * 1.e-6
+ H2O = VH2O(IntCount) * CFACTOR
+ N2 = 0.7808*M
+ O2 = 0.2095*M
+ Time2=mod(Time/(60.*60.), 24.)
+ IF (IntCount .GT. 1) THEN
+   IF (VPRESS(IntCount-1) .NE. PRESS .OR. VTEMP(IntCount-1) .NE. TEMP) THEN
+     call update_tuv()
+   ENDIF
+ ELSE
+   call update_tuv()
+ ENDIF
+
+ IDATE = 19840701
+ THETA=DBLE( ZENITH ( REAL(LAT), REAL(LON), IDATE, REAL(Time2) ))
+#ENDINLINE 
+
+#INLINE F90_UTIL
+
+! ****************************************************************
+!                            
+! InitSaveData - Opens the data file for writing
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewInitSaveData(counter)
+
+        USE model_Parameters
+        USE model_monitor
+        USE model_GLOBAL
+  
+        Integer counter, length, ierr
+        character*200 filename1, filename
+  
+        write(filename1,'(i4)') counter
+
+        filename='cb05cl_ae5_aq_Spec_'//TRIM(ADJUSTL(filename1))//'.dat'
+        open(10, file=filename)
+   
+        filename='cb05cl_ae5_aq_Rate_'//TRIM(ADJUSTL(filename1))//'.dat'
+        open(12, file=filename)
+
+        write (10,'(100000(a25,"!"))') 'TIME','LAT','LON','PRESS', &
+           'TEMP','THETA','H2O', 'CFACTOR', 'RO2', SPC_NAMES
+
+        write (12,'(100000(a50,"!"))') 'TIME','LAT','LON','PRESS', &
+           'TEMP','THETA','H2O', 'CFACTOR', 'RO2', EQN_NAMES
+
+      END SUBROUTINE NewInitSaveData
+
+! End of InitSaveData function
+! ****************************************************************
+! ****************************************************************
+!                            
+! SaveData - Write LOOKAT species in the data file 
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewSaveData ()
+
+        USE model_Global
+        USE model_Monitor
+        USE model_Integrator
+
+        INTEGER i
+      
+        IF (CONSTRAIN_RUN) THEN
+            WRITE(10,999) JDAY,LAT,LON,PRESS,TEMP,THETA,H2O,CFACTOR,RO2,C
+            WRITE(12,999) JDAY,LAT,LON,PRESS,TEMP,THETA,H2O,CFACTOR,RO2,RCONST
+        ELSE
+            WRITE(10,999) TIME,LAT,LON,PRESS,TEMP,THETA,H2O,CFACTOR,RO2,C
+            WRITE(12,999) TIME,LAT,LON,PRESS,TEMP,THETA,H2O,CFACTOR,RO2,RCONST
+        ENDIF
+
+999     FORMAT(100000(E25.16E3,"!"))
+
+      END SUBROUTINE NewSaveData
+
+! End of SaveData function
+! ****************************************************************
+
+! ****************************************************************
+!                            
+! CloseSaveData - Close the data file 
+!   Parameters :                                                  
+!
+! ****************************************************************
+
+      SUBROUTINE NewCloseData ()
+
+          USE model_Parameters
+
+          CLOSE(10)
+          CLOSE(12)
+
+      END SUBROUTINE NewCloseData
+
+! End of CloseSaveData function
+! ****************************************************************
+         
+#ENDINLINE
