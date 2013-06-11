@@ -8,12 +8,11 @@
 MODULE KPP_ROOT_Integrator
 
   USE KPP_ROOT_Precision
-  USE KPP_ROOT_Global, ONLY: FIX, RCONST, TIME, ATOL, RTOL
+  USE KPP_ROOT_Global, ONLY: FIX, RCONST, TIME, ATOL, RTOL, NREACT
   USE KPP_ROOT_Parameters, ONLY: NVAR, NSPEC, NFIX, LU_NONZERO
   USE KPP_ROOT_JacobianSP, ONLY: LU_DIAG
   USE KPP_ROOT_LinearAlgebra, ONLY: KppDecomp, KppSolve, &
                Set2zero, WLAMCH
-  
   IMPLICIT NONE
   PUBLIC
   SAVE
@@ -189,7 +188,7 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
       RWORK(7) = RCNTRL(1)  ! Hmin                    
 
       CALL DLSODE ( FUN_CHEM, NVAR, Y, TIN, TOUT, ITOL, RelTol, AbsTol, ITASK,&
-                    IERR, IOPT, RWORK, LRW, IWORK, LIW, JAC_CHEM, MF)
+                    IERR, IOPT, RWORK, LRW, IWORK, LIW, JAC_CHEM, MF )
 
       ISTATUS(1) = IWORK(12) ! Number of function evaluations 
       ISTATUS(2) = IWORK(13) ! Number of Jacobian evaluations   
@@ -205,10 +204,16 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 !DECK DLSODE                                                            
       SUBROUTINE DLSODE (F, NEQ, Y, T, TOUT, ITOL, RelTol, AbsTol, ITASK,   &
-                       ISTATE, IOPT, RWORK, LRW, IWORK, LIW, JAC, MF)  
+                       ISTATE, IOPT, RWORK, LRW, IWORK, LIW, JAC, MF )
+!BHH: Adding pointer to A and IRR
+      USE KPP_ROOT_Global, ONLY: IRR, NREACT
+      USE KPP_ROOT_Function, ONLY: RRXN=>A
       EXTERNAL F, JAC 
       INTEGER NEQ, ITOL, ITASK, ISTATE, IOPT, LRW, LIW, IWORK(LIW), MF 
       KPP_REAL Y(*), T, TOUT, RelTol(*), AbsTol(*), RWORK(LRW)
+!BHH: Added trr, delt, ydd
+      KPP_REAL trr, delt, ydd(NVAR)
+      INTEGER nfile
 !~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 !***BEGIN PROLOGUE  DLSODE                                              
 !***PURPOSE  Livermore Solver for Ordinary Differential Equations.      
@@ -1455,6 +1460,9 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
 !-----------------------------------------------------------------------
 !                                                                       
 !***FIRST EXECUTABLE STATEMENT  DLSODE                                  
+!BHH
+      trr = t
+!BHH
       IF (ISTATE .LT. 1 .OR. ISTATE .GT. 3) GO TO 601 
       IF (ITASK .LT. 1 .OR. ITASK .GT. 5) GO TO 602 
       IF (ISTATE .EQ. 1) GO TO 10 
@@ -1737,6 +1745,16 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
 ! core integrator (KFLAG = 0).  Test for stop conditions.               
 !-----------------------------------------------------------------------
   300 INIT = 1 
+!BHH - calculate integrated reaction rates (IRR)
+      delt = min(tout,tn) - trr
+!      write(*,'(1P5E10.3)') trr, tn, h, delt, trr+delt
+      trr = tn
+      call f (neq, t, y, ydd)
+      do i = 1, NREACT
+        IRR(i) = IRR(i) + RRXN(i) * delt
+      enddo
+!BHH
+
       GO TO (310, 400, 330, 340, 350), ITASK 
 ! ITASK = 1.  If TOUT has been reached, interpolate. -------------------
   310 IF ((TN - TOUT)*H .LT. 0.0D0) GO TO 250 
@@ -3359,12 +3377,12 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
       INTEGER :: N
       KPP_REAL :: V(NVAR), FCT(NVAR), T, TOLD
       
-!      TOLD = TIME
-!      TIME = T
-!      CALL Update_SUN()
-!      CALL Update_RCONST()
-!      CALL Update_PHOTO()
-!      TIME = TOLD
+      TOLD = TIME
+      TIME = T
+      CALL Update_SUN()
+      CALL Update_RCONST()
+      CALL Update_PHOTO()
+      TIME = TOLD
 
       CALL Fun(V, FIX, RCONST, FCT)
       
@@ -3393,12 +3411,12 @@ SUBROUTINE INTEGRATE( TIN, TOUT, &
       KPP_REAL :: JF(LU_NONZERO)
 #endif   
   
-!      TOLD = TIME
-!      TIME = T
-!      CALL Update_SUN()
-!      CALL Update_RCONST()
-!      CALL Update_PHOTO()
-!      TIME = TOLD
+      TOLD = TIME
+      TIME = T
+      CALL Update_SUN()
+      CALL Update_RCONST()
+      CALL Update_PHOTO()
+      TIME = TOLD
     
 #ifdef FULL_ALGEBRA    
       CALL Jac_SP(V, FIX, RCONST, JV)
