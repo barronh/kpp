@@ -32,6 +32,7 @@
 
 #include "gdata.h"
 #include "code.h"
+#include "time.h"
 #include <string.h>
 
 #define MAX_LINE 120
