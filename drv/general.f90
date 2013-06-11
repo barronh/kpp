@@ -3,7 +3,7 @@ PROGRAM KPP_ROOT_Driver
   USE KPP_ROOT_Model
   USE KPP_ROOT_Initialize, ONLY: Initialize
 
-      KPP_REAL :: T, DVAL(NSPEC)
+      KPP_REAL :: T, DVAL(NSPEC), TNEXT
       KPP_REAL :: RSTATE(20)
       INTEGER :: i
   
@@ -33,10 +33,12 @@ kron: DO WHILE (T < TEND)
         CALL SaveData()
         CALL Update_SUN() 
         CALL Update_RCONST()
-
-        CALL INTEGRATE( TIN = T, TOUT = T+DT, RSTATUS_U = RSTATE, &
-        ICNTRL_U = (/ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /) )
-        T = RSTATE(1)
+        TNEXT=T+DT
+        DO WHILE (T < TNEXT)
+            CALL INTEGRATE( TIN = T, TOUT = TNEXT, RSTATUS_U = RSTATE, &
+            ICNTRL_U = (/ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 /) )
+            T = RSTATE(1)
+        END DO
 
       END DO kron
 !~~~> End Time loop
@@ -50,7 +52,7 @@ kron: DO WHILE (T < TEND)
       CALL SaveData()
       CALL CloseSaveData()
 
-991   FORMAT(F6.1,'%. T=',E9.3,2X,200(A,'=',E11.4,'; '))
+991   FORMAT(F6.1,'%. T=',ES9.3,2X,200(A,'=',ES12.4E3,'; '))
 
 END PROGRAM KPP_ROOT_Driver
 
