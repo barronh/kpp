@@ -1,0 +1,4 @@
+
+export PATH=$PWD/bin:$PATH
+export KPP_HOME=$PWD
+
