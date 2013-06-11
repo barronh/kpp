@@ -3,14 +3,15 @@
 #       Pedefined compilers: INTEL, PGF, HPUX, LAHEY
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-#COMPILER = GNU
-COMPILER = LAHEY
+COMPILER = GNU
+#COMPILER = LAHEY
 #COMPILER = INTEL
 #COMPILER = PGF
 #COMPILER = HPUX
 
-FC_GNU     = g95
-FOPT_GNU   = -cpp -O -pg -fbounds-check -fimplicit-none  -Wall -ftrace=full
+FC_GNU     = gfortran
+FOPT_GNU   = -I/usr/local/include -fbounds-check -fimplicit-none -fno-automatic 
+
 FC_LAHEY   = lf95
 #FOPT_LAHEY = -Cpp --pca -O
 FOPT_LAHEY = -Cpp --chk a,e,s,u --pca --ap -O0 -g --trap --trace --chkglobal
@@ -29,12 +30,12 @@ FOPT_HPUX  = -O -u +Oall +check=on
 FC   = $(FC_$(COMPILER))
 FOPT = $(FOPT_$(COMPILER)) # -DFULL_ALGEBRA
 
-LIBS =
+LIBS = -lnetcdf
 #LIBS = -llapack -lblas
 
 # Command to create Matlab mex gateway routines 
 # Note: use $(FC) as the mex Fortran compiler
-MEX  = mex
+MEX  = /Applications/MATLAB_R2012a.app/bin/mex
 
 GENSRC = KPP_ROOT_Precision.f90  \
 	 KPP_ROOT_Parameters.f90     \
@@ -104,61 +105,61 @@ distclean:
 	KPP_ROOT*.f90 KPP_ROOT_*.mexglx
 
 KPP_ROOT_Precision.o: KPP_ROOT_Precision.f90 
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Parameters.o: KPP_ROOT_Parameters.f90 \
 	            KPP_ROOT_Precision.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Monitor.o: KPP_ROOT_Monitor.f90 \
 	             KPP_ROOT_Precision.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Global.o: KPP_ROOT_Global.f90 \
 	            KPP_ROOT_Parameters.o KPP_ROOT_Precision.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Initialize.o: KPP_ROOT_Initialize.f90  $(GENOBJ) 
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Function.o: KPP_ROOT_Function.f90  $(GENOBJ) 
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Stochastic.o: KPP_ROOT_Stochastic.f90  $(GENOBJ) 
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_JacobianSP.o: KPP_ROOT_JacobianSP.f90 $(GENOBJ)
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Jacobian.o: KPP_ROOT_Jacobian.f90  $(GENOBJ) KPP_ROOT_JacobianSP.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_LinearAlgebra.o: KPP_ROOT_LinearAlgebra.f90 $(GENOBJ) KPP_ROOT_JacobianSP.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Rates.o: KPP_ROOT_Rates.f90  $(GENOBJ) 
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_HessianSP.o: KPP_ROOT_HessianSP.f90  $(GENOBJ)
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Hessian.o:  KPP_ROOT_Hessian.f90 $(GENOBJ) KPP_ROOT_HessianSP.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_StoichiomSP.o: KPP_ROOT_StoichiomSP.f90 $(GENOBJ)
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Stoichiom.o: KPP_ROOT_Stoichiom.f90  $(GENOBJ) KPP_ROOT_StoichiomSP.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Util.o: KPP_ROOT_Util.f90  $(GENOBJ) KPP_ROOT_Monitor.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Main.o: KPP_ROOT_Main.f90  $(ALLOBJ) KPP_ROOT_Initialize.o KPP_ROOT_Model.o KPP_ROOT_Integrator.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Model.o: KPP_ROOT_Model.f90  $(ALLOBJ) KPP_ROOT_Integrator.o
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_Integrator.o: KPP_ROOT_Integrator.f90  $(ALLOBJ)
-	$(FC) $(FOPT) -c $<
+	$(FC) $(FOPT) -x f95-cpp-input -c $<

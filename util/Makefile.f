@@ -5,9 +5,10 @@ FC_INTEL   = ifort
 FOPT_INTEL = -O -f77rtl -mp -pc80 -prec_div -tpp7
 FC_PGF     = pgf77
 FOPT_PGF   = -O -fast -pc 80 -Kieee
-FC_GNU     = g77
-FOPT_GNU   = -O -Wall -Wimplicit -ffast-math -funroll-loops \
-	         -malign-double -ffortran-bounds-check
+
+FC_GNU     = gfortran
+FOPT_GNU   = -I/usr/local/include -fbounds-check -fimplicit-none -fno-automatic 
+
 FC_HPUX    = f90
 FOPT_HPUX  = -O
 
@@ -20,7 +21,7 @@ MATHLIB   = -llapack  -lblas
 
 # To create Matlab mex gateway routines
 # Note: use $(FC) as the mex Fortran compiler
-MEX  = mex
+MEX  = /Applications/MATLAB_R2012a.app/bin/mex
 
 HEADERS = KPP_ROOT_Global.h  KPP_ROOT_Parameters.h  KPP_ROOT_Sparse.h
 
@@ -47,7 +48,7 @@ OBJ =   KPP_ROOT_Main.o      KPP_ROOT_Integrator.o   \
 	KPP_ROOT_Stoichiom.o KPP_ROOT_Util.o         \
 	KPP_ROOT_Monitor.o
 
-all:    exe mex
+all:    exe
 
 exe:	$(HEADERS) $(SPOBJ) $(OBJ)
 	$(FC) $(FOPT) $(SPOBJ) $(OBJ) $(MATHLIB) -o KPP_ROOT.exe
