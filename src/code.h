@@ -39,8 +39,8 @@
 #define MAX_DEPTH 	 10
 #define MAX_SUBST 	 20
 #define SUBST	  	100
-#define MAX_VAR 	150
-#define MAX_OUTBUF   200000
+#define MAX_VAR 	1000
+#define MAX_OUTBUF   20000000
 #define MAX_COLS          8
 #define MAX_LINES        20
 

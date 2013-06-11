@@ -60,13 +60,13 @@
   char *yy_filename[ MAX_INCLUDE ];
   int yy_buf_level = 0;
   
-  char crtToken[100];
-  char nextToken[100];
+  char crtToken[200];
+  char nextToken[200];
   int crtTokType;
   int nextTokType;
   int crtLine;
-  char crtFile[100];
-  char crt_rate[100];
+  char crtFile[200];
+  char crt_rate[200];
 
   int oldnErr = 0;
 
@@ -194,13 +194,11 @@ UFLOAT  {UREAL}([eE]{NRS})?
                         } 
 <INI_STATE>[=]          { RETURN( INIEQUAL );
                         } 
-<INI_STATE>;            { RETURN( yytext[0] );
-                        } 
-<INI_STATE>{FLOAT}      { strcpy( yylval.str, yytext );
+<INI_STATE>{STRING}      { strcpy( yylval.str, yytext );
                           RETURN( INIVALUE ); 
                         } 
-<INI_STATE>[^=;#]       { ScanError("Invalid character '%c' in initial values", yytext[0] );
-                        }
+<INI_STATE>;            { RETURN( yytext[0] );
+                        } 
 <EQN_STATE>{IDSPC}      { strcpy( yylval.str, yytext );
                           RETURN( EQNSPC );
                         } 

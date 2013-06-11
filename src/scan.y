@@ -70,7 +70,7 @@
 %}
 
 %union{
-  char str[80];
+  char str[200];
 };
 
 %token JACOBIAN DOUBLE FUNCTION DEFVAR DEFRAD DEFFIX SETVAR SETRAD SETFIX 

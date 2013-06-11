@@ -41,7 +41,7 @@ char *F90_types[] = { "",                   /* VOID */
                     "INTEGER",            /* INT */
                     "REAL(kind=sp)",      /* FLOAT */
                     "REAL(kind=dp)",      /* DOUBLE */
-                    "CHARACTER(LEN=12)",  /* STRING */
+                    "CHARACTER(LEN=24)",  /* STRING */
                     "CHARACTER(LEN=100)"  /* DOUBLESTRING */
                   };
 
@@ -117,7 +117,7 @@ int crtident;
 
 /* Max no of continuation lines in F90/F95 differs with compilers, but 39
                                should work for every compiler*/
-int number_of_lines = 1, MAX_NO_OF_LINES = 36;
+int number_of_lines = 1, MAX_NO_OF_LINES = 300;
 
 /*  Operator Mapping: 0xaa = '*' | 0xab = '+' | 0xac = ',' 
                       0xad = '-' | 0xae ='.' | 0xaf = '/' */		      
@@ -380,7 +380,7 @@ char dsbuf[200];
           case REAL:
             bprintf( "%12.6e", dval[i] ); break;
           case STRING:
-            bprintf( "'%-12s'", cval[i] ); break;
+            bprintf( "'%-24s'", cval[i] ); break;
           case DOUBLESTRING:
             /* strncpy( dsbuf, cval[i], 54 ); dsbuf[54]='\0'; */
             /* bprintf( "'%48s'", dsbuf ); break; */

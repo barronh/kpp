@@ -36,7 +36,7 @@
 #include "code.h"
 #include "scan.h"
  
-#define MAX_MONITOR 8
+#define MAX_MONITOR 800
 enum strutypes { PLAIN, LU };
 
 int **structB;
@@ -52,7 +52,7 @@ int C_DEFAULT, C;
 int DC;
 int ARP, JVRP, NJVRP, CROW_JVRP, IROW_JVRP, ICOL_JVRP;
 int V, F, VAR, FIX;
-int RCONST, RCT;
+int RCONST, RCT, IRR;
 int Vdot, P_VAR, D_VAR;
 int KR, A, BV, BR, IV;
 int JV, UV, JUV, JTUV, JVS; 
@@ -152,6 +152,7 @@ int i,j;
   V_USER = DefvElm( "V_USER", real, -NVAR, "Concentration of variable species in USER's order" );
  
   RCONST = DefvElm( "RCONST", real, -NREACT, "Rate constants (global)" );
+  IRR    = DefvElm( "IRR", real, -NREACT, "Integrated rates constants (global)" );
   RCT    = DefvElm( "RCT",    real, -NREACT, "Rate constants (local)" );
 
   Vdot = DefvElm( "Vdot", real, -NVAR, "Time derivative of variable species concentrations" );
@@ -180,7 +181,7 @@ int i,j;
   DT     = DefElm( "DT", real, "Integration step");
   
   A  = DefvElm( "A", real, -NREACT, "Rate for each equation" );
-
+  
   ARP  = DefvElm( "ARP", real, -NREACT, "Reactant product in each equation" );
   NJVRP    = DefConst( "NJVRP",   INT, "Length of sparse Jacobian JVRP" );
   JVRP = DefvElm( "JVRP", real, -NJVRP, "d ARP(1:NREACT)/d VAR (1:NVAR)" );
@@ -333,6 +334,9 @@ int dim;
 	     
 
   GlobalDeclare( RCONST );
+  WriteComment("Adding IRR");
+
+  GlobalDeclare( IRR );
   GlobalDeclare( TIME );
   GlobalDeclare( SUN );
   GlobalDeclare( TEMP );
@@ -888,10 +892,14 @@ void GenerateJacReactantProd()
 int i, j, k, l, m, JVRP_NZ, newrow;
 int used;
 int F_STOIC;
-int crow_JVRP[MAX_EQN], icol_JVRP[MAX_EQN*MAX_SPECIES];
-int irow_JVRP[MAX_EQN*MAX_SPECIES];
+//int crow_JVRP[MAX_EQN], icol_JVRP[MAX_EQN*MAX_SPECIES];
+//int irow_JVRP[MAX_EQN*MAX_SPECIES];
 
-  if( VarNr == 0 ) return;
+int *crow_JVRP = malloc(MAX_EQN * sizeof(int));
+int *icol_JVRP = malloc(MAX_EQN * MAX_SPECIES * sizeof(int));
+int *irow_JVRP = malloc(MAX_EQN * MAX_SPECIES * sizeof(int));
+
+if( VarNr == 0 ) return;
   
   if (useDeclareValues) {
     JVRP_NZ = -1;
@@ -2151,7 +2159,7 @@ void GenerateParamHeader()
 {
 int spc;
 int i;
-char name[20];
+char name[MAX_SPNAME + 4];
 int offs;
 int mxyz;
 
@@ -2294,6 +2302,7 @@ int mxyz;
 
 
   ExternDeclare( RCONST );
+  ExternDeclare( IRR );
   ExternDeclare( TIME );
   ExternDeclare( SUN );
   ExternDeclare( TEMP );
@@ -2519,7 +2528,9 @@ int INITVAL;
   INITVAL    = DefFnc( "Initialize",    0, "function to initialize concentrations");
   FunctionBegin( INITVAL );
   F77_Inline("      INCLUDE '%s_Global.h'", rootFileName);
+  //F77_Inline("      INCLUDE '%s_Util.h'", rootFileName);
   F90_Inline("  USE %s_Global\n", rootFileName);
+  F90_Inline("  USE %s_Util\n", rootFileName);
   MATLAB_Inline("global CFACTOR VAR FIX NVAR NFIX", rootFileName);
   
   I = DefElm( "i", INT, 0);
@@ -2897,6 +2908,7 @@ case 'h':
     else
       F90_Inline("  USE %s_Parameters", rootFileName );
     F90_Inline("  IMPLICIT NONE\n", rootFileName );
+    F90_Inline("  PUBLIC\n  SAVE\n", rootFileName );
     Declare( A ); /*  mz_rs_20050117 */
     F90_Inline("\nCONTAINS\n\n");
 
@@ -3153,7 +3165,8 @@ int n;
   printf("\nKPP is generating the global declarations:");
   printf("\n    - %s_Main",rootFileName);
   GenerateGData();
-  
+  FlushBuf();
+
 
   printf("\nKPP is generating the ODE function:");
   printf("\n    - %s_Function",rootFileName);
