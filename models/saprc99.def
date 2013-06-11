@@ -63,12 +63,17 @@
 #ENDINLINE   
    
 #INLINE F90_INIT
+        M = CFACTOR * 1e6
         TSTART = 12.0d0*3600.0d0
         TEND   = TSTART + 120.0d0*3600.0d0
         DT     = 3600.d0
         TEMP   = 300.0d0
 #ENDINLINE   
-     
+
+#INLINE F90_GLOBAL
+        REAL*8 M
+#ENDINLINE F90_GLOBAL
+
 #INLINE MATLAB_INIT
    global TSTART TEND DT TEMP
    TSTART = 12*3600;
