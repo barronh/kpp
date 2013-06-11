@@ -17,33 +17,41 @@
       ARR2 =  DBLE(A0) * EXP( DBLE(B0)/TEMP )              
    END FUNCTION ARR2          
 
-   KPP_REAL FUNCTION EP2(A0,C0,A2,C2,A3,C3)
-      REAL A0,C0,A2,C2,A3,C3
-      REAL(kind=dp) K0,K2,K3            
-      K0 = DBLE(A0) * EXP(-DBLE(C0)/TEMP)
-      K2 = DBLE(A2) * EXP(-DBLE(C2)/TEMP)
-      K3 = DBLE(A3) * EXP(-DBLE(C3)/TEMP)
-      K3 = K3*CFACTOR*1.0E6_dp
-      EP2 = K0 + K3/(1.0_dp+K3/K2 )
+   KPP_REAL FUNCTION EP2(A0, C0, A2, C2, A3, C3)
+      REAL A0, C0, A2, C2, A3, C3
+      REAL(kind=dp) K0, K2, K3            
+      K0 = DBLE(A0) * EXP(-DBLE(C0) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      K3 = DBLE(A3) * EXP(-DBLE(C3) / TEMP)
+      K3 = K3 * M * 1.0E6_dp
+      EP2 = K0 + K3 / (1.0_dp + K3 / K2 )
    END FUNCTION EP2
 
    KPP_REAL FUNCTION EP3(A1,C1,A2,C2) 
       REAL A1, C1, A2, C2
       REAL(kind=dp) K1, K2      
-      K1 = DBLE(A1) * EXP(-DBLE(C1)/TEMP)
-      K2 = DBLE(A2) * EXP(-DBLE(C2)/TEMP)
-      EP3 = K1 + K2*(1.0E6_dp*CFACTOR)
+      K1 = DBLE(A1) * EXP(-DBLE(C1) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      EP3 = K1 + K2 * (M)
    END FUNCTION EP3 
+
+   KPP_REAL FUNCTION DP3(A1, C1, A2, C2) 
+      REAL(kind=dp) A1, C1, A2, C2
+      REAL(kind=dp) K1, K2      
+      K1 = DBLE(A1) * EXP(-DBLE(C1) / TEMP)
+      K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
+      DP3 = K1 + K2 * (M)
+   END FUNCTION DP3 
 
    KPP_REAL FUNCTION FALL ( A0,B0,C0,A1,B1,C1,CF)
       REAL A0,B0,C0,A1,B1,C1,CF
       REAL(kind=dp) K0, K1     
-      K0 = DBLE(A0) * EXP(-DBLE(B0)/TEMP)* (TEMP/300.0_dp)**DBLE(C0)
-      K1 = DBLE(A1) * EXP(-DBLE(B1)/TEMP)* (TEMP/300.0_dp)**DBLE(C1)
-      K0 = K0*CFACTOR*1.0E6_dp
-      K1 = K0/K1
-      FALL = (K0/(1.0_dp+K1))*   &
-           DBLE(CF)**(1.0_dp/(1.0_dp+(LOG10(K1))**2))
+      K0 = ARR(A0, B0, C0)
+      K1 = ARR(A1, B1, C1)
+      K0 = K0 * M
+      K1 = K0 / K1
+      FALL = (K0 / (1.0_dp + K1))*   &
+           DBLE(CF)**(1.0_dp / (1.0_dp + (LOG10(K1))**2))
    END FUNCTION FALL
 
   !---------------------------------------------------------------------------
