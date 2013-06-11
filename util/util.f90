@@ -8,8 +8,15 @@
       SUBROUTINE InitSaveData ()
 
       USE KPP_ROOT_Parameters
+      USE KPP_ROOT_Monitor
+
+      INTEGER i
 
       open(10, file='KPP_ROOT.dat')
+
+      WRITE(10,998) 'TIME',  &
+                   (TRIM(SPC_NAMES(LOOKAT(i))), i=1,NLOOKAT)
+998   FORMAT(A25,100(1X,A25))
 
       END SUBROUTINE InitSaveData
 
@@ -32,7 +39,7 @@
 
       WRITE(10,999) (TIME-TSTART)/3600.D0,  &
                    (C(LOOKAT(i))/CFACTOR, i=1,NLOOKAT)
-999   FORMAT(E24.16,100(1X,E24.16))
+999   FORMAT(ES25.16E3,100(1X,ES25.16E3))
 
       END SUBROUTINE SaveData
 
