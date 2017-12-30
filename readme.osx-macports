@@ -1,0 +1,29 @@
+KPP can be compiled on OSX using MacPorts (https://www.macports.org/) to supply 
+a more unix-compatible version of gcc (as well as flex). To do this follow the
+instructions below:
+
+1) Install Xcode and the Xcode Command Line Tools, and then install macports.
+See here for more guidance: https://www.macports.org/install.php
+
+2) Install Flex and GCC:
+port install gcc49
+port install flex
+
+3) Replace the Makefile.defs and cflags.guess files with the provided alternative 
+osx-macports files:
+cp Makefile.defs.osx-macports Makefile.defs
+cp cflags.guess.osx-macports cflags.guess
+
+These files are configured assuming that you've installed macports in the default,
+system-wide, location (/opt/local/). If you have installed macports anywhere else
+you will have to modify them to use your own path. Also, the gcc compiler has a
+version specific binary name - so this may need changing at a future date as new
+versions are released.
+
+
+4) Compile KPP by following the rest of the instructions in "readme".
+
+
+This installation has be tested on OSX 10.10.5, with MacPorts 2.4.2, flex 2.6.4 
+and gcc version 4.9.4. It should work with minimal changes on other OSX systems
+though.
