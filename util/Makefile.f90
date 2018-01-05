@@ -10,7 +10,7 @@ COMPILER = GNU
 #COMPILER = HPUX
 
 FC_GNU     = gfortran
-FOPT_GNU   = -I/usr/local/include -fbounds-check -fimplicit-none -fno-automatic 
+FOPT_GNU   = -I/usr/local/include -fbounds-check -fimplicit-none -fno-automatic
 
 FC_LAHEY   = lf95
 #FOPT_LAHEY = -Cpp --pca -O
@@ -51,8 +51,8 @@ FUNOBJ = KPP_ROOT_Function.o
 JACSRC = KPP_ROOT_JacobianSP.f90  KPP_ROOT_Jacobian.f90
 JACOBJ = KPP_ROOT_JacobianSP.o    KPP_ROOT_Jacobian.o
 
-HESSRC = KPP_ROOT_HessianSP.f90   KPP_ROOT_Hessian.f90
-HESOBJ = KPP_ROOT_HessianSP.o     KPP_ROOT_Hessian.o
+#HESSRC = KPP_ROOT_HessianSP.f90   KPP_ROOT_Hessian.f90
+#HESOBJ = KPP_ROOT_HessianSP.o     KPP_ROOT_Hessian.o
 
 STMSRC = KPP_ROOT_StoichiomSP.f90 KPP_ROOT_Stoichiom.f90 
 STMOBJ = KPP_ROOT_StoichiomSP.o   KPP_ROOT_Stoichiom.o
@@ -92,7 +92,7 @@ stochastic:$(ALLOBJ) $(STOCHOBJ) $(MAINOBJ)
 mex:    $(ALLOBJ)
 	$(MEX) FC#$(FC) -fortran -O KPP_ROOT_mex_Fun.f90     $(ALLOBJ)
 	$(MEX) FC#$(FC) -fortran -O KPP_ROOT_mex_Jac_SP.f90  $(ALLOBJ)
-	$(MEX) FC#$(FC) -fortran -O KPP_ROOT_mex_Hessian.f90 $(ALLOBJ)
+#	$(MEX) FC#$(FC) -fortran -O KPP_ROOT_mex_Hessian.f90 $(ALLOBJ)
 
 clean:
 	rm -f KPP_ROOT*.o KPP_ROOT*.mod \
@@ -140,11 +140,11 @@ KPP_ROOT_LinearAlgebra.o: KPP_ROOT_LinearAlgebra.f90 $(GENOBJ) KPP_ROOT_Jacobian
 KPP_ROOT_Rates.o: KPP_ROOT_Rates.f90  $(GENOBJ) 
 	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
-KPP_ROOT_HessianSP.o: KPP_ROOT_HessianSP.f90  $(GENOBJ)
-	$(FC) $(FOPT) -x f95-cpp-input -c $<
+#KPP_ROOT_HessianSP.o: KPP_ROOT_HessianSP.f90  $(GENOBJ)
+#	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
-KPP_ROOT_Hessian.o:  KPP_ROOT_Hessian.f90 $(GENOBJ) KPP_ROOT_HessianSP.o
-	$(FC) $(FOPT) -x f95-cpp-input -c $<
+#KPP_ROOT_Hessian.o:  KPP_ROOT_Hessian.f90 $(GENOBJ) KPP_ROOT_HessianSP.o
+#	$(FC) $(FOPT) -x f95-cpp-input -c $<
 
 KPP_ROOT_StoichiomSP.o: KPP_ROOT_StoichiomSP.f90 $(GENOBJ)
 	$(FC) $(FOPT) -x f95-cpp-input -c $<
