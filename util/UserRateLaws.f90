@@ -23,7 +23,7 @@
       K0 = DBLE(A0) * EXP(-DBLE(C0) / TEMP)
       K2 = DBLE(A2) * EXP(-DBLE(C2) / TEMP)
       K3 = DBLE(A3) * EXP(-DBLE(C3) / TEMP)
-      K3 = K3 * M * 1.0E6_dp
+      K3 = K3 * M
       EP2 = K0 + K3 / (1.0_dp + K3 / K2 )
    END FUNCTION EP2
 
