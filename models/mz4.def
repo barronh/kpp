@@ -1,0 +1,6 @@
+#include mz4Functions.inc
+#include mz4.spc
+#include mz4.eqn
+#DRIVER ./driver
+#MONITOR O3; NO; NO2;
+#LOOKATALL;

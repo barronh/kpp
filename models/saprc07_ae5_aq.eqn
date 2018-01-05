@@ -1,6 +1,7 @@
 #EQUATIONS
 {   1}  NO2 = NO + O3P : TUV_J(4, THETA) {1.0/<NO2-06>};
-{   2}  O3P {+ O2 + M} = O3 : M * O2 * CMAQ_1to4(5.68E-34, -2.60, 0.0);{   3}  O3P + O3 = DUMMY : CMAQ_1to4(8.00e-12, 0.0, 2060.0);
+{   2}  O3P {+ O2 + M} = O3 : M * O2 * CMAQ_1to4(5.68E-34, -2.60, 0.0);
+{   3}  O3P + O3 = DUMMY : CMAQ_1to4(8.00e-12, 0.0, 2060.0);
 {   4}  O3P + NO = NO2 : CMAQ_10(9.00e-32, -1.50, 0.0, 3.00e-11, 0.0, 0.0, 0.60, 1.0);
 {   5}  O3P + NO2 = NO : CMAQ_1to4(5.50e-12, 0.0, -188.0);
 {   6}  O3P + NO2 = NO3 : CMAQ_10(2.50e-31, -1.80, 0.0, 2.20e-11, -0.70, 0.0, 0.60, 1.0);
@@ -43,7 +44,7 @@
 {  43}  OH + HO2 = DUMMY : CMAQ_1to4(4.80e-11, 0.0, -250.0);
 {  44}  OH + SO2 = HO2 + SULF + SULRXN : CMAQ_10(3.30e-31, -4.30, 0.0, 1.60e-12, 0.0, 0.0, 0.60, 1.0);
 {  45}  OH {+ H2} = HO2 : H2 * CMAQ_1to4(7.70e-12, 0.0, 2100.0);
-{ EX1}  NO2 = NO2EX : 0.; {ignore excited NO2; TUV_J(NO2EX, THETA)};
+{ EX1}  NO2 = NO2EX : 0.; {ignore excited NO2; TUV_J(NO2EX, THETA)}
 { EX2}  NO2EX {+ M} = NO2 + DUMMY : M * CMAQ_1to4(2.76e-11, 0.0, 0.0);
 { EX3}  NO2EX {+ H2O} = NO2 : H2O * CMAQ_1to4(1.70e-10, 0.0, 0.0);
 {EXOH}  NO2EX {+ H2O} = OH + HONO : H2O * CMAQ_1to4(0.0, 0.0, 0.0);
